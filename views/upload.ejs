@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <h1>File Was Uploaded</h1>
+    <h3>Details: </h3>
+    <p>
+        Name:
+        <%=myfile.name%>
+    </p>
+    <p>
+        Mimetype:
+        <%=myfile.mimetype%>
+    </p>
+    <p>
+        Size:
+        <%=myfile.size%>
+    </p>
+    <label for="myfile">Download file:</label>
+    <form action="/download" method="GET" enctype="multipart/form-data">
+        <input type="hidden" name="filename" value="<%=myfile.name%>">
+        <input type="submit" value="Download" />
+    </form>
+</body>
+
+</html>
