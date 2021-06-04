@@ -1,86 +1,50 @@
-name: Google Cloud Run Deploy
-# https://github.com/google-github-actions/setup-gcloud
+name: gcr-cloud-run
+
 on:
   push:
     branches:
+      - master
       - main
 
 env:
-  PROJECT_ID: ${{ secrets.GCR_PROJECT }}
-  RUN_REGION: us-central1
-  SERVICE_NAME: CSCIX691
+  CLOUD_RUN_PROJECT_ID: ${{ secrets.CLOUD_RUN_PROJECT_NAME }}
+  CLOUD_RUN_REGION: asia-northeast1
+  # project-name but it can be anything you want
+  REPO_NAME: CSCIX691
 
 jobs:
-  build:
-    name: Build React App
+  build-and-deploy:
+    name: Setup, Build, and Deploy
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@main
 
-      - name: Setup Node.js (NPM)
-        uses: actions/setup-node@master
-        with:
-          node-version: '12.x'
+    - name: Checkout
+      uses: actions/checkout@v2
 
-      - name: Use cached node_modules
-        uses: actions/cache@master
-        with:
-          path: node_modules
-          key: nodeModules-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            nodeModules-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-        env:
-          CI: true
+    # This step is where our service account will be authenticated
+    - uses: google-github-actions/setup-gcloud@v0.2.0
+      with:
+        project_id: ${{ secrets.CLOUD_RUN_PROJECT_NAME }}
+        service_account_key: ${{ secrets.CLOUD_RUN_SERVICE_ACCOUNT }}
+        service_account_email: ${{ secrets.CLOUD_RUN_SERVICE_ACCOUNT_EMAIL }}
 
-      - name: Build Development
-        run: yarn build
-
-      - name: Archive Production Artifact
-        uses: actions/upload-artifact@main
-        with:
-          name: build
-          path: build
-
-  deploy-gcr:
-    name: Deploy to GCR
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@main
-
-      - name: Download Artifact
-        uses: actions/download-artifact@main
-        with:
-          name: build
-          path: .docker/build
-
-      - name: Setup gcloud CLI
-        uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
-        with:
-          version: '290.0.1'
-          service_account_key: ${{ secrets.GCR_SA_KEY }}
-          project_id: ${{ secrets.GCR_PROJECT }}
-
-      # Build and push image to Google Container Registry
-      - name: Build & Push
-        run: |-
-          gcloud builds submit \
-            --quiet \
-            --tag "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA"
-        working-directory: .docker
-
-      # Deploy image to Cloud Run
-      - name: Deploy GCR
-        run: |-
-          gcloud run deploy "$SERVICE_NAME" \
-            --quiet \
-            --region "$RUN_REGION" \
-            --image "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA" \
-            --platform "managed" \
-            --allow-unauthenticated
+    - name: Enable the necessary APIs and enable docker auth
+      run: |-
+        gcloud services enable containerregistry.googleapis.com
+        gcloud services enable run.googleapis.com
+        gcloud --quiet auth configure-docker
+    - name: Build and tag image
+      run: |-
+        docker build . --tag "gcr.io/$CLOUD_RUN_PROJECT_ID/$REPO_NAME:$GITHUB_SHA"
+    - name: Push image to GCR
+      run: |-
+        docker push gcr.io/$CLOUD_RUN_PROJECT_ID/$REPO_NAME:$GITHUB_SHA
+    - name: Deploy
+      run: |-
+        gcloud components install beta --quiet
+        gcloud beta run deploy $REPO_NAME --image gcr.io/$CLOUD_RUN_PROJECT_ID/$REPO_NAME:$GITHUB_SHA \
+          --project $CLOUD_RUN_PROJECT_ID \
+          --platform managed \
+          --region $CLOUD_RUN_REGION \
+          --allow-unauthenticated \
+          --quiet
